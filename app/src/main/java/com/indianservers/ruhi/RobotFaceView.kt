@@ -107,6 +107,27 @@ open class RobotFaceView @JvmOverloads constructor(
     private var eyeBeatScale = 1f
     private var beatHeadBobY = 0f
     private var cheekBlushBoost = 0f
+    var facePositionX: Float = 0.5f
+        private set
+    var facePositionY: Float = 0.5f
+        private set
+    private var velocityX = 0f
+    private var velocityY = 0f
+    private val friction = 0.85f
+    private val bounce = 0.4f
+    private var squishScaleY = 1f
+    private var scaredShakeUntil = 0L
+    private var scaredShrinkUntil = 0L
+    private var pupilScale = 1f
+    private var microHeadTilt = 0f
+    private var microEyeOffset = PointF(0f, 0f)
+    private var microMouthTwitch = 0f
+    private var dreamMode = false
+    private var nightmareMode = false
+    private var lastSleepCorner = 0
+    private var targetSleepCorner: PointF? = null
+    private var needValues = RobotNeeds()
+    private var showNeedLabels = false
 
     // Ripple effect data
     private class Ripple(val x: Float, val y: Float, var radius: Float, var alpha: Int)
@@ -213,7 +234,10 @@ open class RobotFaceView @JvmOverloads constructor(
             }
 
             override fun onLongPress(e: MotionEvent) {
-                if (zoneFor(e.x, e.y) == PetTouchZone.NOSE) {
+                if (e.y > height - dp(58f)) {
+                    showNeedLabels = !showNeedLabels
+                    invalidate()
+                } else if (zoneFor(e.x, e.y) == PetTouchZone.NOSE) {
                     setExpression(Expression.WINK)
                     touchSpeechListener?.onTouchSpeech("Want to hear a secret?")
                     petTouchListener?.onPetTouch(PetTouchZone.NOSE, PetTouchGesture.HOLD)
@@ -272,6 +296,8 @@ open class RobotFaceView @JvmOverloads constructor(
         invalidate()
     }
 
+    fun getCurrentExpression(): Expression = currentExpression
+
     fun setExpression(expression: Expression) {
         if (currentExpression != expression) {
             previousExpression = currentExpression
@@ -323,6 +349,19 @@ open class RobotFaceView @JvmOverloads constructor(
         invalidate()
     }
 
+    fun setNeeds(needs: RobotNeeds) {
+        needValues = needs
+        if (needs.energy < RobotNeeds.CRITICAL && targetSleepCorner == null) {
+            val corners = listOf(PointF(0.18f, 0.22f), PointF(0.82f, 0.22f), PointF(0.18f, 0.78f), PointF(0.82f, 0.78f))
+            lastSleepCorner = (lastSleepCorner + 1) % corners.size
+            targetSleepCorner = corners[lastSleepCorner]
+        } else if (needs.energy > 0.35f) {
+            targetSleepCorner = null
+        }
+        setVitality(needs.energy, needs.social, needs.stimulation, needs.comfort)
+        invalidate()
+    }
+
     fun setSpeaking(isSpeaking: Boolean) {
         speaking = isSpeaking
         invalidate()
@@ -330,6 +369,80 @@ open class RobotFaceView @JvmOverloads constructor(
 
     fun setMouthOpenRatio(ratio: Float) {
         mouthOpenRatio = ratio.coerceIn(0f, 1f)
+        invalidate()
+    }
+
+    fun applyPhysicsTilt(tiltX: Float, tiltY: Float, faceDown: Boolean = false, shaken: Boolean = false) {
+        velocityX += tiltX.coerceIn(-1f, 1f) * 0.003f
+        velocityY += tiltY.coerceIn(-1f, 1f) * 0.003f
+        if (faceDown) {
+            velocityY += 0.018f
+            setExpression(Expression.DIZZY)
+        }
+        if (shaken) {
+            velocityX += ((Math.random() - 0.5) * 0.06).toFloat()
+            velocityY += ((Math.random() - 0.5) * 0.06).toFloat()
+            setExpression(Expression.DIZZY)
+        }
+        invalidate()
+    }
+
+    fun jumpFromTilt() {
+        velocityY -= 0.055f
+        invalidate()
+    }
+
+    fun triggerLandingSquish() {
+        ValueAnimator.ofFloat(1f, 0.8f, 1.1f, 1f).apply {
+            duration = 260L
+            addUpdateListener {
+                squishScaleY = it.animatedValue as Float
+                invalidate()
+            }
+            start()
+        }
+    }
+
+    fun triggerScaredRecovery() {
+        setExpression(Expression.NERVOUS)
+        scaredShakeUntil = System.currentTimeMillis() + 1_200L
+        scaredShrinkUntil = System.currentTimeMillis() + 1_600L
+        pupilScale = 0.55f
+        invalidate()
+        postDelayed({
+            setExpression(Expression.CURIOUS)
+            pupilScale = 1f
+        }, 1_650L)
+    }
+
+    fun applyMicroExpression(micro: MicroExpression) {
+        microEyeOffset = PointF(micro.eyeOffsetX, micro.eyeOffsetY)
+        pupilScale = micro.pupilScale
+        microHeadTilt = micro.headTilt
+        if (micro.type == MicroExpressionType.DOUBLE_BLINK) forceSlowBlink()
+        if (micro.type == MicroExpressionType.MOUTH_TWITCH) microMouthTwitch = 1f
+        if (micro.type == MicroExpressionType.SAD_FLICKER) {
+            previousExpression = currentExpression
+            currentExpression = Expression.SAD
+            expressionBlend = 0.45f
+        }
+        invalidate()
+        postDelayed({
+            microEyeOffset = PointF(0f, 0f)
+            pupilScale = 1f
+            microHeadTilt = 0f
+            microMouthTwitch = 0f
+            if (micro.type == MicroExpressionType.SAD_FLICKER) {
+                currentExpression = emotionalBlend.base
+                expressionBlend = 1f
+            }
+            invalidate()
+        }, micro.durationMs)
+    }
+
+    fun setDreamMode(enabled: Boolean, nightmare: Boolean = false) {
+        dreamMode = enabled
+        nightmareMode = nightmare
         invalidate()
     }
 
@@ -619,6 +732,8 @@ open class RobotFaceView @JvmOverloads constructor(
             extraPaint.alpha = 255
         }
 
+        updateScreenPhysics()
+
         // Draw Moving Background Grid
         val proximitySpeedScale = when {
             isIntimateMode -> 0.55f
@@ -649,12 +764,29 @@ open class RobotFaceView @JvmOverloads constructor(
 
         canvas.save()
         // Apply Head Tilt and Translation for more life
-        val breath = sin(lifePhase.toDouble()).toFloat() * (4f + affectionLevel * 8f)
+        val breathCycle = when {
+            sleepWeight() > 0.4f -> 0.45f
+            currentExpression in listOf(Expression.NERVOUS, Expression.SHOCK, Expression.SURPRISED) -> 2.6f
+            currentExpression in listOf(Expression.HAPPY, Expression.GRIN, Expression.LOVE) -> 1.45f
+            else -> 1f
+        }
+        val breathDepth = when {
+            sleepWeight() > 0.4f -> 0.04f
+            currentExpression in listOf(Expression.NERVOUS, Expression.SHOCK, Expression.SURPRISED) -> 0.022f
+            else -> 0.015f
+        }
+        val breath = sin((lifePhase * breathCycle).toDouble()).toFloat() * (4f + affectionLevel * 8f)
         val sleepyDrift = sleepWeight() * sin((lifePhase * 0.35f).toDouble()).toFloat() * 18f
         val tinyHeadBob = sin((lifePhase * 1.6f).toDouble()).toFloat() * (2f + energyLevel * 4f)
         val tinyCuriousSway = cos((lifePhase * 0.55f).toDouble()).toFloat() * curiosityLevel * 5f
-        canvas.translate(headTranslationX + tinyCuriousSway + sleepyDrift, headTranslationY + breath + tinyHeadBob + beatHeadBobY)
-        canvas.rotate(headTilt + sleepyDrift * 0.25f, w / 2, h / 2)
+        val physicsX = (facePositionX - 0.5f) * w
+        val physicsY = (facePositionY - 0.5f) * h
+        val scaredShake = if (System.currentTimeMillis() < scaredShakeUntil) sin((lifePhase * 28f).toDouble()).toFloat() * dp(8f) else 0f
+        val bodyScale = (1f + sin((lifePhase * breathCycle).toDouble()).toFloat() * breathDepth) *
+            if (System.currentTimeMillis() < scaredShrinkUntil) 0.72f else 1f
+        canvas.translate(physicsX + scaredShake + headTranslationX + tinyCuriousSway + sleepyDrift, physicsY + headTranslationY + breath + tinyHeadBob + beatHeadBobY)
+        canvas.scale(bodyScale, bodyScale * squishScaleY, w / 2f, h / 2f)
+        canvas.rotate(headTilt + microHeadTilt + sleepyDrift * 0.25f, w / 2, h / 2)
 
         // Draw Face Border with Theme Color Glow
         borderPaint.color = themeColor
@@ -686,8 +818,8 @@ open class RobotFaceView @JvmOverloads constructor(
 
         // Adjust offsets to be more responsive to center-focused tracking
         val idleLook = idleEyeOffset()
-        val offsetX = (eyePositionOffset.x + idleLook.x) * (w * 0.15f)
-        val offsetY = (eyePositionOffset.y + idleLook.y) * (h * 0.15f) + breath * 0.45f
+        val offsetX = (eyePositionOffset.x + idleLook.x + microEyeOffset.x) * (w * 0.15f)
+        val offsetY = (eyePositionOffset.y + idleLook.y + microEyeOffset.y) * (h * 0.15f) + breath * 0.45f
 
         // Draw Brows
         drawBrows(canvas, leftEyeX + offsetX, rightEyeX + offsetX, centerY + offsetY - eyeHeight / 1.5f)
@@ -713,6 +845,89 @@ open class RobotFaceView @JvmOverloads constructor(
         }
         
         canvas.restore()
+
+        drawDreamOverlay(canvas, w, h)
+        drawNeedDots(canvas, w, h)
+    }
+
+    private fun updateScreenPhysics() {
+        targetSleepCorner?.let { target ->
+            velocityX += (target.x - facePositionX) * 0.002f
+            velocityY += (target.y - facePositionY) * 0.002f
+            if (currentExpression == Expression.SLEEP) emitParticles(ParticleType.ZZZ, 1, width * target.x, height * target.y)
+        }
+        facePositionX += velocityX
+        facePositionY += velocityY
+        velocityX *= friction
+        velocityY *= friction
+        var collided = false
+        if (facePositionX < 0.12f) {
+            facePositionX = 0.12f
+            velocityX = -velocityX * bounce
+            collided = true
+        } else if (facePositionX > 0.88f) {
+            facePositionX = 0.88f
+            velocityX = -velocityX * bounce
+            collided = true
+        }
+        if (facePositionY < 0.16f) {
+            facePositionY = 0.16f
+            velocityY = -velocityY * bounce
+            collided = true
+        } else if (facePositionY > 0.84f) {
+            facePositionY = 0.84f
+            velocityY = -velocityY * bounce
+            collided = true
+            if (kotlin.math.abs(velocityY) > 0.008f) triggerLandingSquish()
+        }
+        if (collided && currentExpression !in listOf(Expression.SLEEP, Expression.POWER_OFF)) {
+            previousExpression = currentExpression
+            currentExpression = Expression.SHOCK
+            postDelayed({ currentExpression = emotionalBlend.base; invalidate() }, 180L)
+        }
+    }
+
+    private fun drawNeedDots(canvas: Canvas, w: Float, h: Float) {
+        val values = listOf(
+            "energy" to needValues.energy,
+            "social" to needValues.social,
+            "stimulation" to needValues.stimulation,
+            "comfort" to needValues.comfort,
+            "expression" to needValues.expression,
+            "safety" to needValues.safety
+        )
+        val spacing = dp(22f)
+        val startX = w / 2f - spacing * (values.size - 1) / 2f
+        values.forEachIndexed { index, (name, value) ->
+            val pulse = if (value < RobotNeeds.CRITICAL) 1f + abs(sin((lifePhase * 3f).toDouble()).toFloat()) * 0.65f else 1f
+            extraPaint.color = when {
+                value > 0.7f -> Color.parseColor("#4ADE80")
+                value > 0.3f -> Color.parseColor("#FACC15")
+                else -> Color.parseColor("#F87171")
+            }
+            extraPaint.alpha = 190
+            canvas.drawCircle(startX + index * spacing, h - dp(18f), dp(4.2f) * pulse, extraPaint)
+            if (showNeedLabels) {
+                textPaint.textSize = dp(10f)
+                textPaint.alpha = 210
+                canvas.drawText("${name.take(3)} ${(value * 100).toInt()}%", startX + index * spacing - dp(18f), h - dp(30f) - index % 2 * dp(12f), textPaint)
+            }
+        }
+        extraPaint.alpha = 255
+        textPaint.alpha = 255
+        textPaint.textSize = 32f
+    }
+
+    private fun drawDreamOverlay(canvas: Canvas, w: Float, h: Float) {
+        if (!dreamMode) return
+        extraPaint.style = Paint.Style.FILL
+        repeat(5) { index ->
+            val phase = lifePhase * (0.08f + index * 0.02f) + index * 1.7f
+            val x = w * (0.2f + index * 0.15f) + sin(phase.toDouble()).toFloat() * dp(30f)
+            val y = h * (0.25f + (index % 3) * 0.16f) + cos((phase * 0.7f).toDouble()).toFloat() * dp(22f)
+            extraPaint.color = if (nightmareMode) Color.argb(70, 80, 0, 40) else Color.argb(58, 120 + index * 20, 170, 255)
+            canvas.drawOval(RectF(x - dp(32f), y - dp(18f), x + dp(32f), y + dp(18f)), extraPaint)
+        }
     }
 
     private fun updateAndDrawParticles(canvas: Canvas) {
@@ -866,6 +1081,9 @@ open class RobotFaceView @JvmOverloads constructor(
             Expression.HAPPY, Expression.GRIN, Expression.LOVE -> {
                 val rect = RectF(x - mouthWidth / 2, y - 40, x + mouthWidth / 2, y + 40)
                 canvas.drawArc(rect, 0f, 180f, false, featurePaint)
+                if (microMouthTwitch > 0f) {
+                    canvas.drawLine(x + mouthWidth * 0.22f, y + 38f, x + mouthWidth * 0.42f, y + 28f, featurePaint)
+                }
             }
             Expression.SAD, Expression.WORRIED, Expression.CRYING -> {
                 val rect = RectF(x - mouthWidth / 2, y + 20, x + mouthWidth / 2, y + 80)
@@ -1153,17 +1371,17 @@ open class RobotFaceView @JvmOverloads constructor(
             
             // Pupil shadow/glow
             pupilPaint.setShadowLayer(15f, 0f, 0f, themeColor)
-            canvas.drawCircle(pupilX, pupilY, eyeWidth * 0.25f, pupilPaint)
+            canvas.drawCircle(pupilX, pupilY, eyeWidth * 0.25f * pupilScale, pupilPaint)
             
             // Pupil core
             pupilPaint.color = Color.BLACK
             pupilPaint.setShadowLayer(0f, 0f, 0f, 0)
-            canvas.drawCircle(pupilX, pupilY, eyeWidth * 0.15f, pupilPaint)
+            canvas.drawCircle(pupilX, pupilY, eyeWidth * 0.15f * pupilScale, pupilPaint)
 
             // Inner iris highlight
             extraPaint.color = themeColor
             extraPaint.alpha = 100
-            canvas.drawCircle(pupilX, pupilY, eyeWidth * 0.1f, extraPaint)
+            canvas.drawCircle(pupilX, pupilY, eyeWidth * 0.1f * pupilScale, extraPaint)
         }
         
         // Draw glint/reflection in eye

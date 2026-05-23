@@ -109,6 +109,42 @@ data class Performance(
     val createdAt: Long
 )
 
+@Entity
+data class NeedsSnapshot(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val timestamp: Long,
+    val energy: Float,
+    val social: Float,
+    val stimulation: Float,
+    val comfort: Float,
+    val expression: Float,
+    val safety: Float
+)
+
+@Entity
+data class InnerThought(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val timestamp: Long,
+    val thought: String,
+    val leaked: Boolean
+)
+
+@Entity
+data class BondLevel(
+    @PrimaryKey val id: Long = 1,
+    val level: Int,
+    val updatedAt: Long,
+    val lastSeenAt: Long
+)
+
+@Entity
+data class InsideJoke(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val summary: String,
+    val context: String,
+    val timestamp: Long
+)
+
 @Dao
 interface ConversationDao {
     @Insert suspend fun insert(entry: ConversationEntry)
@@ -217,6 +253,38 @@ interface PerformanceDao {
     suspend fun get(id: Long): Performance?
 }
 
+@Dao
+interface NeedsDao {
+    @Insert suspend fun insert(snapshot: NeedsSnapshot)
+
+    @Query("SELECT * FROM NeedsSnapshot ORDER BY timestamp DESC LIMIT 1")
+    suspend fun latest(): NeedsSnapshot?
+}
+
+@Dao
+interface InnerThoughtDao {
+    @Insert suspend fun insert(thought: InnerThought)
+
+    @Query("SELECT * FROM InnerThought ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun recent(limit: Int): List<InnerThought>
+}
+
+@Dao
+interface BondDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(bond: BondLevel)
+
+    @Query("SELECT * FROM BondLevel WHERE id = 1")
+    suspend fun get(): BondLevel?
+}
+
+@Dao
+interface InsideJokeDao {
+    @Insert suspend fun insert(joke: InsideJoke)
+
+    @Query("SELECT * FROM InsideJoke ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun recent(limit: Int): List<InsideJoke>
+}
+
 @Database(
     entities = [
         ConversationEntry::class,
@@ -228,9 +296,13 @@ interface PerformanceDao {
         Route::class,
         Waypoint::class,
         PatrolEvent::class,
-        Performance::class
+        Performance::class,
+        NeedsSnapshot::class,
+        InnerThought::class,
+        BondLevel::class,
+        InsideJoke::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class RuhiDatabase : RoomDatabase() {
@@ -243,6 +315,10 @@ abstract class RuhiDatabase : RoomDatabase() {
     abstract fun waypointDao(): WaypointDao
     abstract fun patrolEventDao(): PatrolEventDao
     abstract fun performanceDao(): PerformanceDao
+    abstract fun needsDao(): NeedsDao
+    abstract fun innerThoughtDao(): InnerThoughtDao
+    abstract fun bondDao(): BondDao
+    abstract fun insideJokeDao(): InsideJokeDao
 
     companion object {
         @Volatile private var instance: RuhiDatabase? = null

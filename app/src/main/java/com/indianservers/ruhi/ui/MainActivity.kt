@@ -22,13 +22,25 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceManager
 import com.indianservers.ruhi.ConversationManager
+import com.indianservers.ruhi.AmbientSoundEngine
+import com.indianservers.ruhi.AutonomousWillEngine
+import com.indianservers.ruhi.GoalAction
+import com.indianservers.ruhi.HapticEngine
+import com.indianservers.ruhi.HapticPattern
+import com.indianservers.ruhi.MicroExpressionEngine
+import com.indianservers.ruhi.NeedAction
+import com.indianservers.ruhi.NeedsEngine
 import com.indianservers.ruhi.PetTouchGesture
 import com.indianservers.ruhi.PetTouchZone
 import com.indianservers.ruhi.R
+import com.indianservers.ruhi.RelationshipEngine
+import com.indianservers.ruhi.RuhiDatabase
+import com.indianservers.ruhi.RuhiInnerMonologue
 import com.indianservers.ruhi.RuhiWidget
 import com.indianservers.ruhi.SettingsActivity
 import com.indianservers.ruhi.databinding.ActivityMainBinding
 import com.indianservers.ruhi.hardware.BleRobotManager
+import com.indianservers.ruhi.hardware.RobotHardwareController
 import com.indianservers.ruhi.repository.CameraRepository
 import com.indianservers.ruhi.repository.ConversationRepository
 import com.indianservers.ruhi.repository.SensorRepository
@@ -36,6 +48,7 @@ import com.indianservers.ruhi.viewmodel.RuhiViewModel
 import kotlinx.coroutines.launch
 import java.util.Locale
 import java.util.concurrent.Executors
+import kotlin.math.abs
 
 class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var binding: ActivityMainBinding
@@ -43,6 +56,15 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var tts: TextToSpeech
     private lateinit var speechRecognizer: SpeechRecognizer
     private lateinit var sensorRepository: SensorRepository
+    private lateinit var database: RuhiDatabase
+    private lateinit var rootRepository: com.indianservers.ruhi.ConversationRepository
+    private lateinit var needsEngine: NeedsEngine
+    private lateinit var relationshipEngine: RelationshipEngine
+    private lateinit var hapticEngine: HapticEngine
+    private lateinit var ambientSoundEngine: AmbientSoundEngine
+    private lateinit var microExpressionEngine: MicroExpressionEngine
+    private lateinit var autonomousWillEngine: AutonomousWillEngine
+    private lateinit var innerMonologue: RuhiInnerMonologue
     private var currentExpression = com.indianservers.ruhi.RobotFaceView.Expression.NEUTRAL
     private val cameraExecutor = Executors.newSingleThreadExecutor()
 
@@ -51,31 +73,77 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         tts = TextToSpeech(this, this)
-        val rootRepo = com.indianservers.ruhi.ConversationRepository(this)
+        database = RuhiDatabase.getInstance(this)
+        rootRepository = com.indianservers.ruhi.ConversationRepository(this)
+        val bleRobotManager = BleRobotManager(this)
+        val hardwareController = RobotHardwareController(bleRobotManager)
+        needsEngine = NeedsEngine(this, database, hardwareController)
+        relationshipEngine = RelationshipEngine(database)
+        hapticEngine = HapticEngine(this)
+        ambientSoundEngine = AmbientSoundEngine(this)
+        microExpressionEngine = MicroExpressionEngine(
+            needsProvider = { needsEngine.needs.value },
+            expressionProvider = { binding.contentMain.robotFaceView.getCurrentExpression() }
+        )
+        autonomousWillEngine = AutonomousWillEngine(
+            needsProvider = { needsEngine.needs.value },
+            memoryProvider = { rootRepository.topMemories() },
+            bondProvider = { relationshipEngine.currentBond() }
+        )
+        innerMonologue = RuhiInnerMonologue(database, { needsEngine.needs.value }, { rootRepository.topMemories() })
         viewModel = ViewModelProvider(
             this,
-            RuhiViewModel.Factory(ConversationRepository(ConversationManager(rootRepo)), BleRobotManager(this), PreferenceManager.getDefaultSharedPreferences(this))
+            RuhiViewModel.Factory(ConversationRepository(ConversationManager(rootRepository)), bleRobotManager, PreferenceManager.getDefaultSharedPreferences(this))
         )[RuhiViewModel::class.java]
         sensorRepository = SensorRepository(this) { reading ->
             viewModel.onSensorEvent(reading.ax, reading.ay, reading.az, reading.gx, reading.gy, reading.gz)
+            val shaken = abs(reading.ax) + abs(reading.ay) + abs(reading.az) > 32f || abs(reading.gx) + abs(reading.gy) + abs(reading.gz) > 8f
+            binding.contentMain.robotFaceView.applyPhysicsTilt(reading.ax / 10f, reading.ay / 10f, faceDown = reading.az < -8f, shaken = shaken)
+            if (reading.ay < -12f) binding.contentMain.robotFaceView.jumpFromTilt()
+            if (shaken) {
+                needsEngine.registerSafetyThreat()
+                hapticEngine.play(HapticPattern.STARTLED)
+            }
         }
         setupTouch()
         setupSpeech()
         collectViewModel()
+        collectLivingSystems()
+        startLivingSystems()
         binding.micFab.setOnClickListener { startSpeech() }
         binding.gameFab.setOnClickListener { startActivity(Intent(this, com.indianservers.ruhi.GameActivity::class.java)) }
         binding.settingsFab.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
         if (allPermissionsGranted()) startCamera() else ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, 10)
     }
 
-    override fun onResume() { super.onResume(); sensorRepository.start() }
-    override fun onPause() { saveWidgetState(); sensorRepository.stop(); super.onPause() }
+    override fun onResume() {
+        super.onResume()
+        sensorRepository.start()
+        lifecycleScope.launch {
+            relationshipEngine.recordAppOpenAndReturnMessage()?.let { reunionLine ->
+                binding.contentMain.robotFaceView.setExpression(com.indianservers.ruhi.RobotFaceView.Expression.SHOCK)
+                binding.contentMain.robotFaceView.postDelayed({ binding.contentMain.robotFaceView.setExpression(com.indianservers.ruhi.RobotFaceView.Expression.LOVE) }, 600)
+                speakAsRuhi(reunionLine, com.indianservers.ruhi.RobotFaceView.Expression.CRYING)
+            }
+        }
+    }
+
+    override fun onPause() {
+        saveWidgetState()
+        sensorRepository.stop()
+        needsEngine.stop()
+        super.onPause()
+    }
 
     override fun onInit(status: Int) { if (status == TextToSpeech.SUCCESS) { tts.language = Locale.US; tts.setPitch(1.18f); tts.setSpeechRate(0.92f) } }
 
     private fun setupTouch() {
         binding.contentMain.robotFaceView.setPetTouchListener { zone, gesture ->
             viewModel.onUserTouch(zone)
+            needsEngine.markInteraction(NeedsEngine.InteractionKind.PETTING)
+            lifecycleScope.launch { relationshipEngine.recordPetting() }
+            if (zone == PetTouchZone.FOREHEAD || gesture == PetTouchGesture.PETTING) hapticEngine.play(HapticPattern.PURR)
+            if (zone == PetTouchZone.NOSE) hapticEngine.play(HapticPattern.STARTLED)
             if (gesture == PetTouchGesture.DOUBLE_TAP && zone == PetTouchZone.BODY) startSpeech()
         }
     }
@@ -87,6 +155,13 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
                 binding.contentMain.userBubble.text = text
                 binding.contentMain.userBubble.visibility = View.VISIBLE
+                needsEngine.markInteraction(NeedsEngine.InteractionKind.CONVERSATION)
+                lifecycleScope.launch {
+                    relationshipEngine.recordConversation()
+                    relationshipEngine.maybeStoreInsideJoke(text, "speech recognition")
+                }
+                if (text.contains("rest now", ignoreCase = true)) needsEngine.satisfyEnergy()
+                if (listOf("good", "love", "kind", "thanks", "sweet").any { text.contains(it, ignoreCase = true) }) needsEngine.registerPositiveWords()
                 viewModel.onSpeechResult(text)
             }
             override fun onReadyForSpeech(params: Bundle?) = Unit; override fun onBeginningOfSpeech() = Unit
@@ -98,8 +173,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun collectViewModel() {
-        lifecycleScope.launch { viewModel.emotionState.collect { expression -> currentExpression = expression; binding.contentMain.robotFaceView.setExpression(expression); if (expression.isMajorWidgetEmotion()) updateWidget() } }
-        lifecycleScope.launch { viewModel.faceData.collect { it?.let { face -> binding.contentMain.robotFaceView.setEyeOffset(face.eyeOffsetX, face.eyeOffsetY) } } }
+        lifecycleScope.launch { viewModel.emotionState.collect { expression -> currentExpression = expression; binding.contentMain.robotFaceView.setExpression(expression); hapticEngine.forExpression(expression); if (expression == com.indianservers.ruhi.RobotFaceView.Expression.SLEEP) binding.contentMain.robotFaceView.setDreamMode(true, needsEngine.needs.value.safety < 0.35f) else binding.contentMain.robotFaceView.setDreamMode(false); if (expression.isMajorWidgetEmotion()) updateWidget() } }
+        lifecycleScope.launch { viewModel.faceData.collect { it?.let { face -> binding.contentMain.robotFaceView.setEyeOffset(face.eyeOffsetX, face.eyeOffsetY); needsEngine.markInteraction(NeedsEngine.InteractionKind.EYE_CONTACT) } } }
         lifecycleScope.launch {
             viewModel.settings.collect {
                 binding.contentMain.robotFaceView.eyeColorOverride = it.eyeColor
@@ -115,13 +190,13 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
         lifecycleScope.launch {
             viewModel.ttsText.collect {
-                binding.contentMain.ruhiBubble.text = it
-                binding.contentMain.ruhiBubble.visibility = View.VISIBLE
-                tts.speak(it, TextToSpeech.QUEUE_FLUSH, null, "ruhi")
+                needsEngine.markSpokenOrMoved()
+                speakAsRuhi(it, currentExpression)
             }
         }
         lifecycleScope.launch {
             viewModel.moodState.collect {
+                ambientSoundEngine.update(currentExpression, it.happiness)
                 binding.contentMain.moodLabel.text = when {
                     it.happiness > 0.7f -> "Feeling Happy"
                     it.energy < 0.3f -> "Feeling Sleepy"
@@ -130,6 +205,59 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 }
             }
         }
+    }
+
+    private fun collectLivingSystems() {
+        lifecycleScope.launch {
+            needsEngine.needs.collect { needs ->
+                binding.contentMain.robotFaceView.setNeeds(needs)
+                if (needs.energy < 0.4f) tts.setSpeechRate(0.72f)
+            }
+        }
+        lifecycleScope.launch {
+            needsEngine.actions.collect { action ->
+                when (action) {
+                    is NeedAction.Speak -> speakAsRuhi(action.text, action.expression)
+                    is NeedAction.Express -> binding.contentMain.robotFaceView.setExpression(action.expression)
+                    is NeedAction.Notify -> Unit
+                    NeedAction.DockAndRest -> binding.contentMain.robotFaceView.setExpression(com.indianservers.ruhi.RobotFaceView.Expression.SLEEP)
+                    NeedAction.Explore -> speakAsRuhi("I need to poke around a little. The quiet is getting itchy.", com.indianservers.ruhi.RobotFaceView.Expression.CURIOUS)
+                    NeedAction.ScaredRecovery -> {
+                        binding.contentMain.robotFaceView.triggerScaredRecovery()
+                        speakAsRuhi("Did you see that? Something scared me!", com.indianservers.ruhi.RobotFaceView.Expression.NERVOUS)
+                    }
+                }
+            }
+        }
+        lifecycleScope.launch { microExpressionEngine.events.collect { binding.contentMain.robotFaceView.applyMicroExpression(it) } }
+        lifecycleScope.launch {
+            autonomousWillEngine.actions.collect { action ->
+                when (action) {
+                    is GoalAction.Speak -> speakAsRuhi(action.text, action.expression)
+                    is GoalAction.SetGoal -> needsEngine.markInteraction(NeedsEngine.InteractionKind.NEW_INPUT)
+                    GoalAction.Explore -> binding.contentMain.robotFaceView.setExpression(com.indianservers.ruhi.RobotFaceView.Expression.CURIOUS)
+                    GoalAction.PlayGame -> speakAsRuhi("Want to play something with me? I've been wanting to.", com.indianservers.ruhi.RobotFaceView.Expression.GRIN)
+                }
+            }
+        }
+        lifecycleScope.launch { innerMonologue.leaks.collect { speakAsRuhi(it, com.indianservers.ruhi.RobotFaceView.Expression.SHY) } }
+    }
+
+    private fun startLivingSystems() {
+        needsEngine.start()
+        ambientSoundEngine.start(lifecycleScope)
+        microExpressionEngine.start(lifecycleScope)
+        autonomousWillEngine.start(lifecycleScope)
+        innerMonologue.start(lifecycleScope)
+    }
+
+    private fun speakAsRuhi(text: String, expression: com.indianservers.ruhi.RobotFaceView.Expression) {
+        currentExpression = expression
+        binding.contentMain.robotFaceView.setExpression(expression)
+        binding.contentMain.ruhiBubble.text = text
+        binding.contentMain.ruhiBubble.visibility = View.VISIBLE
+        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "ruhi")
+        needsEngine.markSpokenOrMoved()
     }
 
     private fun startCamera() {
@@ -178,6 +306,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     override fun onDestroy() {
         speechRecognizer.destroy()
         tts.shutdown()
+        ambientSoundEngine.stop()
+        hapticEngine.cancel()
+        microExpressionEngine.stop()
+        autonomousWillEngine.stop()
+        innerMonologue.stop()
         cameraExecutor.shutdown()
         super.onDestroy()
     }
