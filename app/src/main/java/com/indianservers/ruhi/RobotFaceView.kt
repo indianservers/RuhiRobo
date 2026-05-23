@@ -128,6 +128,65 @@ open class RobotFaceView @JvmOverloads constructor(
     private var targetSleepCorner: PointF? = null
     private var needValues = RobotNeeds()
     private var showNeedLabels = false
+    var torsoOffsetX: Float = 0f
+        set(value) {
+            field = value
+            invalidate()
+        }
+    var torsoOffsetY: Float = 0f
+        set(value) {
+            field = value
+            invalidate()
+        }
+    var torsoRotation: Float = 0f
+        set(value) {
+            field = value
+            invalidate()
+        }
+    var armLAngle: Float = 0f
+        set(value) {
+            field = value
+            invalidate()
+        }
+    var armRAngle: Float = 0f
+        set(value) {
+            field = value
+            invalidate()
+        }
+    var legLAngle: Float = 0f
+        set(value) {
+            field = value
+            invalidate()
+        }
+    var legRAngle: Float = 0f
+        set(value) {
+            field = value
+            invalidate()
+        }
+    var torsoScaleX: Float = 1f
+        set(value) {
+            field = value
+            invalidate()
+        }
+    var torsoScaleY: Float = 1f
+        set(value) {
+            field = value
+            invalidate()
+        }
+    var headBobY: Float = 0f
+        set(value) {
+            field = value
+            invalidate()
+        }
+    var headWagX: Float = 0f
+        set(value) {
+            field = value
+            invalidate()
+        }
+    private var legLSlide = 0f
+    private var legRSlide = 0f
+    private var combatFlashAlpha = 0
+    private var combatCountdownText: String? = null
 
     // Ripple effect data
     private class Ripple(val x: Float, val y: Float, var radius: Float, var alpha: Int)
@@ -444,6 +503,123 @@ open class RobotFaceView @JvmOverloads constructor(
         dreamMode = enabled
         nightmareMode = nightmare
         invalidate()
+    }
+
+    fun applyBodyKeyframe(keyframe: BodyKeyframe) {
+        headBobY = keyframe.headBobY
+        headWagX = keyframe.headWagX
+        torsoOffsetY = keyframe.torsoOffsetY
+        torsoRotation = keyframe.torsoRotation
+        armLAngle = keyframe.armLAngle
+        armRAngle = keyframe.armRAngle
+        legLAngle = keyframe.legLAngle
+        legRAngle = keyframe.legRAngle
+        setExpression(keyframe.expression)
+        keyframe.particleType?.let { emitParticles(it, 12) }
+    }
+
+    fun resetBodyPose() {
+        torsoOffsetX = 0f
+        torsoOffsetY = 0f
+        torsoRotation = 0f
+        armLAngle = 0f
+        armRAngle = 0f
+        legLAngle = 0f
+        legRAngle = 0f
+        torsoScaleX = 1f
+        torsoScaleY = 1f
+        headBobY = 0f
+        headWagX = 0f
+        legLSlide = 0f
+        legRSlide = 0f
+        combatCountdownText = null
+        invalidate()
+    }
+
+    fun playCombatMove(move: FightMove) {
+        val frames = CombatAnimator.keyframesFor(move)
+        animateBodyFrames(frames)
+    }
+
+    fun takeCombatHit(fromLeft: Boolean = true) {
+        combatFlashAlpha = 190
+        val direction = if (fromLeft) 1f else -1f
+        setExpression(Expression.SHOCK)
+        emitParticles(ParticleType.STAR, 18, width / 2f + direction * width * 0.08f, height / 2f)
+        ValueAnimator.ofFloat(0f, direction * dp(22f), -direction * dp(8f), 0f).apply {
+            duration = 340L
+            addUpdateListener {
+                torsoOffsetX = it.animatedValue as Float
+                headWagX = -torsoOffsetX * 0.45f
+                combatFlashAlpha = (combatFlashAlpha * 0.72f).toInt()
+                invalidate()
+            }
+            start()
+        }
+        postDelayed({ setExpression(Expression.ANGRY) }, 320L)
+    }
+
+    fun knockedDownPose() {
+        combatCountdownText = "3"
+        setExpression(Expression.DEAD)
+        ValueAnimator.ofFloat(torsoRotation, 90f).apply {
+            duration = 500L
+            addUpdateListener {
+                torsoRotation = it.animatedValue as Float
+                armLAngle = -80f
+                armRAngle = 80f
+                invalidate()
+            }
+            start()
+        }
+        listOf("2", "1", null).forEachIndexed { index, text ->
+            postDelayed({
+                combatCountdownText = text
+                if (text == null) resetBodyPose()
+                invalidate()
+            }, (index + 1) * 800L)
+        }
+    }
+
+    fun victoryPose() {
+        setExpression(Expression.HEARTS)
+        emitParticles(ParticleType.CONFETTI, 60)
+        animateBodyFrames(
+            listOf(
+                BodyKeyframe(0, 0f, 0f, 0f, 0f, -130f, 130f, 0f, 0f, Expression.LOVE, ParticleType.HEART),
+                BodyKeyframe(220, -dp(50f), 0f, -dp(30f), 180f, -150f, 150f, -20f, 20f, Expression.HEARTS, ParticleType.CONFETTI),
+                BodyKeyframe(520, 0f, 0f, 0f, 360f, -120f, 120f, 0f, 0f, Expression.GRIN, ParticleType.CONFETTI)
+            )
+        )
+    }
+
+    fun defeatPose() {
+        animateBodyFrames(
+            listOf(
+                BodyKeyframe(0, 0f, 0f, dp(10f), 0f, 30f, -30f, 0f, 0f, Expression.SAD, null),
+                BodyKeyframe(600, dp(10f), 0f, dp(32f), -8f, 75f, -75f, 25f, -25f, Expression.RELIEVED, ParticleType.TEAR)
+            )
+        )
+    }
+
+    fun setMoonwalkSlides(left: Float, right: Float) {
+        legLSlide = left
+        legRSlide = right
+        invalidate()
+    }
+
+    private fun animateBodyFrames(frames: List<BodyKeyframe>) {
+        if (frames.isEmpty()) return
+        val duration = frames.maxOf { it.timeMs }.coerceAtLeast(1)
+        ValueAnimator.ofInt(0, duration).apply {
+            this.duration = duration.toLong()
+            interpolator = android.view.animation.AccelerateDecelerateInterpolator()
+            addUpdateListener {
+                val time = it.animatedValue as Int
+                applyBodyKeyframe(interpolateBodyFrame(frames, time))
+            }
+            start()
+        }
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -816,10 +992,12 @@ open class RobotFaceView @JvmOverloads constructor(
         val leftEyeX = w / 2f - eyeSpacing - eyeWidth / 2f
         val rightEyeX = w / 2f + eyeSpacing + eyeWidth / 2f
 
+        drawFullBody(canvas, w, h, centerY)
+
         // Adjust offsets to be more responsive to center-focused tracking
         val idleLook = idleEyeOffset()
-        val offsetX = (eyePositionOffset.x + idleLook.x + microEyeOffset.x) * (w * 0.15f)
-        val offsetY = (eyePositionOffset.y + idleLook.y + microEyeOffset.y) * (h * 0.15f) + breath * 0.45f
+        val offsetX = (eyePositionOffset.x + idleLook.x + microEyeOffset.x) * (w * 0.15f) + headWagX
+        val offsetY = (eyePositionOffset.y + idleLook.y + microEyeOffset.y) * (h * 0.15f) + breath * 0.45f + headBobY
 
         // Draw Brows
         drawBrows(canvas, leftEyeX + offsetX, rightEyeX + offsetX, centerY + offsetY - eyeHeight / 1.5f)
@@ -848,6 +1026,89 @@ open class RobotFaceView @JvmOverloads constructor(
 
         drawDreamOverlay(canvas, w, h)
         drawNeedDots(canvas, w, h)
+        drawCombatOverlay(canvas, w, h)
+    }
+
+    private fun drawFullBody(canvas: Canvas, w: Float, h: Float, faceCenterY: Float) {
+        val bodyColor = blendColor(getThemeColor(), Color.WHITE, 0.16f)
+        val torsoW = eyeSpacing * 3.2f
+        val torsoH = eyeHeight * 0.72f
+        val torsoCx = w / 2f + torsoOffsetX
+        val torsoTop = faceCenterY + eyeHeight * 0.72f + torsoOffsetY
+        val torsoCy = torsoTop + torsoH / 2f
+        extraPaint.style = Paint.Style.FILL
+        extraPaint.color = Color.argb(150, Color.red(bodyColor), Color.green(bodyColor), Color.blue(bodyColor))
+        val save = canvas.save()
+        canvas.translate(torsoCx, torsoCy)
+        canvas.rotate(torsoRotation)
+        canvas.scale(torsoScaleX, torsoScaleY)
+        val torso = RectF(-torsoW / 2f, -torsoH / 2f, torsoW / 2f, torsoH / 2f)
+        canvas.drawRoundRect(torso, dp(26f), dp(26f), extraPaint)
+        extraPaint.style = Paint.Style.STROKE
+        extraPaint.strokeWidth = dp(4f)
+        extraPaint.alpha = 180
+        canvas.drawRoundRect(torso, dp(26f), dp(26f), extraPaint)
+        extraPaint.alpha = 255
+        drawLimb(canvas, -torsoW * 0.48f, -torsoH * 0.32f, torsoH * 0.72f, dp(18f), armLAngle, true)
+        drawLimb(canvas, torsoW * 0.48f, -torsoH * 0.32f, torsoH * 0.72f, dp(18f), armRAngle, true)
+        drawLimb(canvas, -torsoW * 0.22f + legLSlide, torsoH * 0.42f, torsoH * 0.68f, dp(20f), legLAngle, false)
+        drawLimb(canvas, torsoW * 0.22f + legRSlide, torsoH * 0.42f, torsoH * 0.68f, dp(20f), legRAngle, false)
+        canvas.restoreToCount(save)
+        extraPaint.style = Paint.Style.FILL
+    }
+
+    private fun drawLimb(canvas: Canvas, pivotX: Float, pivotY: Float, length: Float, thickness: Float, angle: Float, hand: Boolean) {
+        val save = canvas.save()
+        canvas.translate(pivotX, pivotY)
+        canvas.rotate(angle)
+        extraPaint.style = Paint.Style.FILL
+        extraPaint.color = Color.argb(135, 255, 255, 255)
+        canvas.drawRoundRect(RectF(-thickness / 2f, 0f, thickness / 2f, length), thickness / 2f, thickness / 2f, extraPaint)
+        if (hand) {
+            canvas.drawCircle(0f, length + thickness * 0.35f, thickness * 0.72f, extraPaint)
+        }
+        canvas.restoreToCount(save)
+    }
+
+    private fun drawCombatOverlay(canvas: Canvas, w: Float, h: Float) {
+        if (combatFlashAlpha > 0) {
+            extraPaint.style = Paint.Style.FILL
+            extraPaint.color = Color.WHITE
+            extraPaint.alpha = combatFlashAlpha
+            canvas.drawRect(0f, 0f, w, h, extraPaint)
+            combatFlashAlpha = (combatFlashAlpha - 18).coerceAtLeast(0)
+            extraPaint.alpha = 255
+        }
+        combatCountdownText?.let { text ->
+            textPaint.textSize = dp(86f)
+            textPaint.alpha = 230
+            canvas.drawText(text, w / 2f - textPaint.measureText(text) / 2f, h * 0.28f, textPaint)
+            textPaint.textSize = 32f
+            textPaint.alpha = 255
+        }
+    }
+
+    private fun interpolateBodyFrame(frames: List<BodyKeyframe>, timeMs: Int): BodyKeyframe {
+        val ordered = frames.sortedBy { it.timeMs }
+        val before = ordered.lastOrNull { it.timeMs <= timeMs } ?: ordered.first()
+        val after = ordered.firstOrNull { it.timeMs >= timeMs } ?: ordered.last()
+        if (before == after) return before
+        val span = (after.timeMs - before.timeMs).coerceAtLeast(1)
+        val t = ((timeMs - before.timeMs).toFloat() / span).coerceIn(0f, 1f)
+        fun lerp(a: Float, b: Float) = a + (b - a) * t
+        return BodyKeyframe(
+            timeMs = timeMs,
+            headBobY = lerp(before.headBobY, after.headBobY),
+            headWagX = lerp(before.headWagX, after.headWagX),
+            torsoOffsetY = lerp(before.torsoOffsetY, after.torsoOffsetY),
+            torsoRotation = lerp(before.torsoRotation, after.torsoRotation),
+            armLAngle = lerp(before.armLAngle, after.armLAngle),
+            armRAngle = lerp(before.armRAngle, after.armRAngle),
+            legLAngle = lerp(before.legLAngle, after.legLAngle),
+            legRAngle = lerp(before.legRAngle, after.legRAngle),
+            expression = if (t < 0.5f) before.expression else after.expression,
+            particleType = after.particleType
+        )
     }
 
     private fun updateScreenPhysics() {

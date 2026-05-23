@@ -254,6 +254,14 @@ data class SpatialCell(
     val updatedAt: Long
 )
 
+@Entity
+data class TournamentRecord(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val date: Long,
+    val placement: Int,
+    val roundsWon: Int
+)
+
 @Dao
 interface ConversationDao {
     @Insert suspend fun insert(entry: ConversationEntry)
@@ -492,6 +500,14 @@ interface SpatialCellDao {
     suspend fun recent(limit: Int): List<SpatialCell>
 }
 
+@Dao
+interface TournamentDao {
+    @Insert suspend fun insert(record: TournamentRecord)
+
+    @Query("SELECT * FROM TournamentRecord ORDER BY date DESC LIMIT :limit")
+    suspend fun recent(limit: Int): List<TournamentRecord>
+}
+
 @Database(
     entities = [
         ConversationEntry::class,
@@ -519,9 +535,10 @@ interface SpatialCellDao {
         SaveableArtwork::class,
         Poem::class,
         EvolutionMilestone::class,
-        SpatialCell::class
+        SpatialCell::class,
+        TournamentRecord::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class RuhiDatabase : RoomDatabase() {
@@ -548,6 +565,7 @@ abstract class RuhiDatabase : RoomDatabase() {
     abstract fun creativeDao(): CreativeDao
     abstract fun evolutionDao(): EvolutionDao
     abstract fun spatialCellDao(): SpatialCellDao
+    abstract fun tournamentDao(): TournamentDao
 
     companion object {
         @Volatile private var instance: RuhiDatabase? = null

@@ -40,6 +40,16 @@
             android:screenOrientation="landscape"
             android:theme="@style/Theme.RuhiRobo" />
         <activity
+            android:name=".DanceActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.RuhiRobo" />
+        <activity
+            android:name=".FightActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.RuhiRobo" />
+        <activity
             android:name=".SettingsActivity"
             android:exported="false"
             android:screenOrientation="landscape"
