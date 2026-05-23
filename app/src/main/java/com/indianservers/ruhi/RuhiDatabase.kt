@@ -145,6 +145,115 @@ data class InsideJoke(
     val timestamp: Long
 )
 
+@Entity(indices = [Index(value = ["topic"], unique = true)])
+data class KnowledgeTopic(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val topic: String,
+    val knowledgeLevel: Float,
+    val interestLevel: Float,
+    val source: String,
+    val learnedAt: Long
+)
+
+@Entity
+data class KnowledgeLink(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val topicA: String,
+    val topicB: String,
+    val relationship: String
+)
+
+@Entity
+data class Hypothesis(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val pattern: String,
+    val theory: String,
+    val confidence: Float,
+    val verified: Boolean,
+    val updatedAt: Long
+)
+
+@Entity(indices = [Index(value = ["triggerText", "outcome"], unique = true)])
+data class CausalPattern(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val triggerText: String,
+    val outcome: String,
+    val confidence: Float,
+    val occurrences: Int,
+    val updatedAt: Long
+)
+
+@Entity
+data class EnvironmentProfile(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val roomFingerprint: String,
+    val knownObjects: String,
+    val lastScanned: Long,
+    val roomName: String
+)
+
+@Entity
+data class PatternModel(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val eventType: String,
+    val value: String,
+    val hourOfDay: Int,
+    val dayOfWeek: Int,
+    val timestamp: Long
+)
+
+@Entity(indices = [Index(value = ["startFragment"], unique = true)])
+data class PhrasePattern(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val startFragment: String,
+    val completion: String,
+    val count: Int,
+    val updatedAt: Long
+)
+
+@Entity(indices = [Index(value = ["cacheKey"], unique = true)])
+data class AudioCache(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val cacheKey: String,
+    val filePath: String,
+    val createdAt: Long
+)
+
+@Entity
+data class SaveableArtwork(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val timestamp: Long,
+    val moodState: String,
+    val imagePath: String
+)
+
+@Entity
+data class Poem(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val timestamp: Long,
+    val topic: String,
+    val text: String,
+    val hearted: Boolean = false
+)
+
+@Entity
+data class EvolutionMilestone(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val milestone: String,
+    val achievedAt: Long,
+    val note: String
+)
+
+@Entity
+data class SpatialCell(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val x: Int,
+    val y: Int,
+    val occupancy: Float,
+    val label: String,
+    val updatedAt: Long
+)
+
 @Dao
 interface ConversationDao {
     @Insert suspend fun insert(entry: ConversationEntry)
@@ -285,6 +394,104 @@ interface InsideJokeDao {
     suspend fun recent(limit: Int): List<InsideJoke>
 }
 
+@Dao
+interface KnowledgeDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertTopic(topic: KnowledgeTopic)
+    @Insert suspend fun insertLink(link: KnowledgeLink)
+
+    @Query("SELECT * FROM KnowledgeTopic WHERE topic = :topic LIMIT 1")
+    suspend fun findTopic(topic: String): KnowledgeTopic?
+
+    @Query("SELECT * FROM KnowledgeTopic ORDER BY interestLevel - knowledgeLevel DESC LIMIT :limit")
+    suspend fun curiosityTargets(limit: Int): List<KnowledgeTopic>
+
+    @Query("SELECT COUNT(*) FROM KnowledgeTopic WHERE knowledgeLevel > 0.8 AND topic LIKE '%' || :domain || '%'")
+    suspend fun masteredCount(domain: String): Int
+}
+
+@Dao
+interface HypothesisDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(hypothesis: Hypothesis)
+
+    @Query("SELECT * FROM Hypothesis WHERE verified = 0 ORDER BY confidence DESC, updatedAt DESC LIMIT 1")
+    suspend fun strongestUnverified(): Hypothesis?
+
+    @Query("SELECT * FROM Hypothesis WHERE verified = 1 ORDER BY confidence DESC, updatedAt DESC LIMIT :limit")
+    suspend fun verified(limit: Int): List<Hypothesis>
+}
+
+@Dao
+interface CausalPatternDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(pattern: CausalPattern)
+
+    @Query("SELECT * FROM CausalPattern WHERE triggerText = :trigger AND outcome = :outcome LIMIT 1")
+    suspend fun find(trigger: String, outcome: String): CausalPattern?
+
+    @Query("SELECT * FROM CausalPattern ORDER BY confidence DESC, occurrences DESC LIMIT :limit")
+    suspend fun strongest(limit: Int): List<CausalPattern>
+}
+
+@Dao
+interface EnvironmentDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(profile: EnvironmentProfile)
+
+    @Query("SELECT * FROM EnvironmentProfile ORDER BY lastScanned DESC")
+    suspend fun all(): List<EnvironmentProfile>
+}
+
+@Dao
+interface PatternModelDao {
+    @Insert suspend fun insert(model: PatternModel)
+
+    @Query("SELECT * FROM PatternModel ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun recent(limit: Int): List<PatternModel>
+
+    @Query("SELECT * FROM PatternModel WHERE eventType = :eventType ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun recentByType(eventType: String, limit: Int): List<PatternModel>
+}
+
+@Dao
+interface PhrasePatternDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(pattern: PhrasePattern)
+
+    @Query("SELECT * FROM PhrasePattern WHERE startFragment = :start LIMIT 1")
+    suspend fun find(start: String): PhrasePattern?
+
+    @Query("SELECT * FROM PhrasePattern WHERE :text LIKE startFragment || '%' AND count >= 5 ORDER BY count DESC LIMIT 1")
+    suspend fun anticipate(text: String): PhrasePattern?
+}
+
+@Dao
+interface AudioCacheDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(cache: AudioCache)
+    @Query("SELECT * FROM AudioCache WHERE cacheKey = :key LIMIT 1")
+    suspend fun find(key: String): AudioCache?
+}
+
+@Dao
+interface CreativeDao {
+    @Insert suspend fun insertArtwork(artwork: SaveableArtwork)
+    @Insert suspend fun insertPoem(poem: Poem): Long
+    @Query("SELECT * FROM SaveableArtwork ORDER BY timestamp DESC")
+    suspend fun artworks(): List<SaveableArtwork>
+    @Query("SELECT * FROM Poem ORDER BY timestamp DESC")
+    suspend fun poems(): List<Poem>
+}
+
+@Dao
+interface EvolutionDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(milestone: EvolutionMilestone)
+    @Query("SELECT * FROM EvolutionMilestone ORDER BY achievedAt DESC")
+    suspend fun all(): List<EvolutionMilestone>
+}
+
+@Dao
+interface SpatialCellDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsert(cell: SpatialCell)
+    @Query("SELECT * FROM SpatialCell ORDER BY updatedAt DESC LIMIT :limit")
+    suspend fun recent(limit: Int): List<SpatialCell>
+}
+
 @Database(
     entities = [
         ConversationEntry::class,
@@ -300,9 +507,21 @@ interface InsideJokeDao {
         NeedsSnapshot::class,
         InnerThought::class,
         BondLevel::class,
-        InsideJoke::class
+        InsideJoke::class,
+        KnowledgeTopic::class,
+        KnowledgeLink::class,
+        Hypothesis::class,
+        CausalPattern::class,
+        EnvironmentProfile::class,
+        PatternModel::class,
+        PhrasePattern::class,
+        AudioCache::class,
+        SaveableArtwork::class,
+        Poem::class,
+        EvolutionMilestone::class,
+        SpatialCell::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class RuhiDatabase : RoomDatabase() {
@@ -319,6 +538,16 @@ abstract class RuhiDatabase : RoomDatabase() {
     abstract fun innerThoughtDao(): InnerThoughtDao
     abstract fun bondDao(): BondDao
     abstract fun insideJokeDao(): InsideJokeDao
+    abstract fun knowledgeDao(): KnowledgeDao
+    abstract fun hypothesisDao(): HypothesisDao
+    abstract fun causalPatternDao(): CausalPatternDao
+    abstract fun environmentDao(): EnvironmentDao
+    abstract fun patternModelDao(): PatternModelDao
+    abstract fun phrasePatternDao(): PhrasePatternDao
+    abstract fun audioCacheDao(): AudioCacheDao
+    abstract fun creativeDao(): CreativeDao
+    abstract fun evolutionDao(): EvolutionDao
+    abstract fun spatialCellDao(): SpatialCellDao
 
     companion object {
         @Volatile private var instance: RuhiDatabase? = null

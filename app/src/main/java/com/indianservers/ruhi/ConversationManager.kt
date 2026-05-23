@@ -101,6 +101,7 @@ class ConversationManager(
             Use tools naturally when useful, then answer as Ruhi after seeing tool_result.
             Current time of day: $timeOfDay.
             Current mood: happiness=${mood.happiness}, energy=${mood.energy}, curiosity=${mood.curiosity}. Current expression=${blend.dominantExpression}.
+            Current mind/body context: ${RuhiMindContext.state.value.asPromptContext()}
             Personality traits: $traits. Respond accordingly.
             Your memories about this user: $memoryText.
         """.trimIndent()

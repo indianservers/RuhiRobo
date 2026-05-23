@@ -8,6 +8,8 @@ import android.graphics.Color
 import com.google.mlkit.vision.face.Face
 import com.indianservers.ruhi.PetTouchZone
 import com.indianservers.ruhi.RobotFaceView
+import com.indianservers.ruhi.RuhiMindContext
+import com.indianservers.ruhi.RuhiMindState
 import com.indianservers.ruhi.hardware.BleRobotManager
 import com.indianservers.ruhi.model.FaceData
 import com.indianservers.ruhi.model.MoodState
@@ -43,6 +45,8 @@ class RuhiViewModel(
 
     private val _settings = MutableStateFlow(RuhiSettings.from(sharedPreferences))
     val settings: StateFlow<RuhiSettings> = _settings
+
+    val mindState: StateFlow<RuhiMindState> = RuhiMindContext.state
 
     init {
         sharedPreferences.registerOnSharedPreferenceChangeListener(this)
@@ -93,6 +97,10 @@ class RuhiViewModel(
         if (abs(ax) + abs(ay) + abs(az) > 32f || abs(gz) > 5f) {
             _emotionState.value = RobotFaceView.Expression.SHOCK
         }
+    }
+
+    fun updateMindState(transform: (RuhiMindState) -> RuhiMindState) {
+        RuhiMindContext.update(transform)
     }
 
     fun onUserTouch(zone: TouchZone) {
