@@ -113,8 +113,11 @@ open class RobotFaceView @JvmOverloads constructor(
         private set
     private var velocityX = 0f
     private var velocityY = 0f
-    private val friction = 0.85f
-    private val bounce = 0.4f
+    private var externalTiltX = 0f
+    private var externalTiltY = 0f
+    private var lastShakeImpulseAt = 0L
+    private val friction = 0.78f
+    private val bounce = 0.22f
     private var squishScaleY = 1f
     private var scaredShakeUntil = 0L
     private var scaredShrinkUntil = 0L
@@ -432,22 +435,24 @@ open class RobotFaceView @JvmOverloads constructor(
     }
 
     fun applyPhysicsTilt(tiltX: Float, tiltY: Float, faceDown: Boolean = false, shaken: Boolean = false) {
-        velocityX += tiltX.coerceIn(-1f, 1f) * 0.003f
-        velocityY += tiltY.coerceIn(-1f, 1f) * 0.003f
+        externalTiltX += (tiltX.coerceIn(-1f, 1f) - externalTiltX) * 0.22f
+        externalTiltY += (tiltY.coerceIn(-1f, 1f) - externalTiltY) * 0.22f
         if (faceDown) {
-            velocityY += 0.018f
+            externalTiltY += (0.75f - externalTiltY) * 0.12f
             setExpression(Expression.DIZZY)
         }
-        if (shaken) {
-            velocityX += ((Math.random() - 0.5) * 0.06).toFloat()
-            velocityY += ((Math.random() - 0.5) * 0.06).toFloat()
+        val now = System.currentTimeMillis()
+        if (shaken && now - lastShakeImpulseAt > 650L) {
+            lastShakeImpulseAt = now
+            velocityX += ((Math.random() - 0.5) * 0.018).toFloat()
+            velocityY += ((Math.random() - 0.5) * 0.018).toFloat()
             setExpression(Expression.DIZZY)
         }
         invalidate()
     }
 
     fun jumpFromTilt() {
-        velocityY -= 0.055f
+        velocityY = (velocityY - 0.022f).coerceAtLeast(-0.026f)
         invalidate()
     }
 
@@ -1112,31 +1117,40 @@ open class RobotFaceView @JvmOverloads constructor(
     }
 
     private fun updateScreenPhysics() {
+        var targetX: Float
+        var targetY: Float
         targetSleepCorner?.let { target ->
-            velocityX += (target.x - facePositionX) * 0.002f
-            velocityY += (target.y - facePositionY) * 0.002f
+            targetX = target.x
+            targetY = target.y
             if (currentExpression == Expression.SLEEP) emitParticles(ParticleType.ZZZ, 1, width * target.x, height * target.y)
+        } ?: run {
+            targetX = 0.5f + externalTiltX * 0.10f
+            targetY = 0.5f + externalTiltY * 0.08f
         }
+        velocityX += (targetX - facePositionX) * 0.006f
+        velocityY += (targetY - facePositionY) * 0.006f
+        velocityX = velocityX.coerceIn(-0.012f, 0.012f)
+        velocityY = velocityY.coerceIn(-0.012f, 0.012f)
         facePositionX += velocityX
         facePositionY += velocityY
         velocityX *= friction
         velocityY *= friction
         var collided = false
-        if (facePositionX < 0.12f) {
-            facePositionX = 0.12f
+        if (facePositionX < 0.24f) {
+            facePositionX = 0.24f
             velocityX = -velocityX * bounce
             collided = true
-        } else if (facePositionX > 0.88f) {
-            facePositionX = 0.88f
+        } else if (facePositionX > 0.76f) {
+            facePositionX = 0.76f
             velocityX = -velocityX * bounce
             collided = true
         }
-        if (facePositionY < 0.16f) {
-            facePositionY = 0.16f
+        if (facePositionY < 0.24f) {
+            facePositionY = 0.24f
             velocityY = -velocityY * bounce
             collided = true
-        } else if (facePositionY > 0.84f) {
-            facePositionY = 0.84f
+        } else if (facePositionY > 0.76f) {
+            facePositionY = 0.76f
             velocityY = -velocityY * bounce
             collided = true
             if (kotlin.math.abs(velocityY) > 0.008f) triggerLandingSquish()

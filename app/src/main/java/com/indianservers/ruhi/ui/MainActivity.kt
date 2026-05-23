@@ -63,7 +63,6 @@ import com.indianservers.ruhi.viewmodel.RuhiViewModel
 import kotlinx.coroutines.launch
 import java.util.Locale
 import java.util.concurrent.Executors
-import kotlin.math.abs
 
 class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var binding: ActivityMainBinding
@@ -96,6 +95,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var arModeManager: ARModeManager
     private var currentExpression = com.indianservers.ruhi.RobotFaceView.Expression.NEUTRAL
     private val cameraExecutor = Executors.newSingleThreadExecutor()
+    private var lastShakeReactionAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -140,10 +140,18 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         )[RuhiViewModel::class.java]
         sensorRepository = SensorRepository(this) { reading ->
             viewModel.onSensorEvent(reading.ax, reading.ay, reading.az, reading.gx, reading.gy, reading.gz)
-            val shaken = abs(reading.ax) + abs(reading.ay) + abs(reading.az) > 32f || abs(reading.gx) + abs(reading.gy) + abs(reading.gz) > 8f
-            binding.contentMain.robotFaceView.applyPhysicsTilt(reading.ax / 10f, reading.ay / 10f, faceDown = reading.az < -8f, shaken = shaken)
-            if (reading.ay < -12f) binding.contentMain.robotFaceView.jumpFromTilt()
-            if (shaken) {
+            binding.contentMain.robotFaceView.applyPhysicsTilt(
+                tiltX = reading.tiltX,
+                tiltY = reading.tiltY,
+                faceDown = reading.faceDown,
+                shaken = reading.shaken
+            )
+            if (reading.tiltY < -0.85f && reading.motionG > 0.45f) {
+                binding.contentMain.robotFaceView.jumpFromTilt()
+            }
+            val now = System.currentTimeMillis()
+            if (reading.shaken && now - lastShakeReactionAt > 900L) {
+                lastShakeReactionAt = now
                 needsEngine.registerSafetyThreat()
                 hapticEngine.play(HapticPattern.STARTLED)
             }

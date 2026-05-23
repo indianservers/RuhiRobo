@@ -22,5 +22,11 @@ data class SensorReading(
     val az: Float,
     val gx: Float,
     val gy: Float,
-    val gz: Float
+    val gz: Float,
+    val tiltX: Float = 0f,
+    val tiltY: Float = 0f,
+    val motionG: Float = 0f,
+    val gyroMagnitude: Float = 0f,
+    val faceDown: Boolean = false,
+    val shaken: Boolean = false
 )
