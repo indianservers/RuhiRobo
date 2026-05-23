@@ -5,10 +5,12 @@ import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.util.Log
 
 enum class HapticPattern { PURR, HEARTBEAT, STARTLED, HAPPY_BUZZ, SAD_PULSE, GROWL, SNORE, NOTIFICATION_TAP }
 
 class HapticEngine(context: Context) {
+    private val tag = "HapticEngine"
     private val vibrator: Vibrator? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         context.getSystemService(VibratorManager::class.java)?.defaultVibrator
     } else {
@@ -27,11 +29,19 @@ class HapticEngine(context: Context) {
             HapticPattern.SNORE -> longArrayOf(0, 300, 500, 300) to intArrayOf(0, 30, 0, 40)
             HapticPattern.NOTIFICATION_TAP -> longArrayOf(0, 35, 45, 70, 45, 35) to intArrayOf(0, 180, 0, 120, 0, 180)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator?.vibrate(VibrationEffect.createWaveform(timings, amplitudes, if (repeat) 1 else -1))
-        } else {
-            @Suppress("DEPRECATION")
-            vibrator?.vibrate(timings, if (repeat) 1 else -1)
+        try {
+            val deviceVibrator = vibrator ?: return
+            if (!deviceVibrator.hasVibrator()) return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                deviceVibrator.vibrate(VibrationEffect.createWaveform(timings, amplitudes, if (repeat) 1 else -1))
+            } else {
+                @Suppress("DEPRECATION")
+                deviceVibrator.vibrate(timings, if (repeat) 1 else -1)
+            }
+        } catch (security: SecurityException) {
+            Log.w(tag, "Haptics unavailable without vibration permission.", security)
+        } catch (runtime: RuntimeException) {
+            Log.w(tag, "Haptics failed on this device.", runtime)
         }
     }
 
@@ -48,6 +58,12 @@ class HapticEngine(context: Context) {
     }
 
     fun cancel() {
-        vibrator?.cancel()
+        try {
+            vibrator?.cancel()
+        } catch (security: SecurityException) {
+            Log.w(tag, "Could not cancel haptics without vibration permission.", security)
+        } catch (runtime: RuntimeException) {
+            Log.w(tag, "Could not cancel haptics on this device.", runtime)
+        }
     }
 }
