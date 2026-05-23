@@ -262,6 +262,18 @@ data class TournamentRecord(
     val roundsWon: Int
 )
 
+@Entity
+data class GameResult(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val gameType: String,
+    val playerScore: Int,
+    val ruhiScore: Int,
+    val outcome: String,
+    val durationMs: Long,
+    val timestamp: Long,
+    val bondLevelAtTime: Int
+)
+
 @Dao
 interface ConversationDao {
     @Insert suspend fun insert(entry: ConversationEntry)
@@ -508,6 +520,20 @@ interface TournamentDao {
     suspend fun recent(limit: Int): List<TournamentRecord>
 }
 
+@Dao
+interface GameResultDao {
+    @Insert suspend fun insert(result: GameResult)
+
+    @Query("SELECT * FROM GameResult ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun recent(limit: Int): List<GameResult>
+
+    @Query("SELECT * FROM GameResult WHERE gameType = :gameType ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun recentForGame(gameType: String, limit: Int): List<GameResult>
+
+    @Query("SELECT COUNT(*) FROM GameResult WHERE gameType = :gameType AND outcome = :outcome")
+    suspend fun countOutcome(gameType: String, outcome: String): Int
+}
+
 @Database(
     entities = [
         ConversationEntry::class,
@@ -536,9 +562,10 @@ interface TournamentDao {
         Poem::class,
         EvolutionMilestone::class,
         SpatialCell::class,
-        TournamentRecord::class
+        TournamentRecord::class,
+        GameResult::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class RuhiDatabase : RoomDatabase() {
@@ -566,6 +593,7 @@ abstract class RuhiDatabase : RoomDatabase() {
     abstract fun evolutionDao(): EvolutionDao
     abstract fun spatialCellDao(): SpatialCellDao
     abstract fun tournamentDao(): TournamentDao
+    abstract fun gameResultDao(): GameResultDao
 
     companion object {
         @Volatile private var instance: RuhiDatabase? = null

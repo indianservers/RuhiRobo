@@ -50,6 +50,31 @@
             android:screenOrientation="landscape"
             android:theme="@style/Theme.RuhiRobo" />
         <activity
+            android:name=".GameHub"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.RuhiRobo" />
+        <activity
+            android:name=".SoccerActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.RuhiRobo" />
+        <activity
+            android:name=".TicTacToeActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.RuhiRobo" />
+        <activity
+            android:name=".RockPaperScissorsActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.RuhiRobo" />
+        <activity
+            android:name=".WhackAMoleActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.RuhiRobo" />
+        <activity
             android:name=".SettingsActivity"
             android:exported="false"
             android:screenOrientation="landscape"

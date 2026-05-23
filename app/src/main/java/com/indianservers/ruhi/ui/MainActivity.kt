@@ -156,7 +156,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         collectMindSystems(bleRobotManager)
         startLivingSystems()
         binding.micFab.setOnClickListener { startSpeech() }
-        binding.gameFab.setOnClickListener { startActivity(Intent(this, com.indianservers.ruhi.GameActivity::class.java)) }
+        binding.gameFab.setOnClickListener { startActivity(Intent(this, com.indianservers.ruhi.GameHub::class.java)) }
         binding.settingsFab.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
         if (allPermissionsGranted()) startCamera() else ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, 10)
     }
