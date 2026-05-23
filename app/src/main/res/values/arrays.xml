@@ -1,0 +1,25 @@
+<resources>
+    <string-array name="personality_presets">
+        <item>Cheerful Ruhi</item>
+        <item>Calm Ruhi</item>
+        <item>Mischievous Ruhi</item>
+        <item>Baby Ruhi</item>
+    </string-array>
+    <string-array name="personality_preset_values">
+        <item>cheerful</item>
+        <item>calm</item>
+        <item>mischievous</item>
+        <item>baby</item>
+    </string-array>
+    <string-array name="face_border_styles">
+        <item>Pulse</item>
+        <item>Solid</item>
+        <item>Rainbow</item>
+        <item>Off</item>
+    </string-array>
+    <string-array name="voice_locales">
+        <item>en_US</item>
+        <item>en_GB</item>
+        <item>hi_IN</item>
+    </string-array>
+</resources>

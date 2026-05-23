@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory app:title="PERSONALITY">
+        <ListPreference
+            app:defaultValue="cheerful"
+            app:entries="@array/personality_presets"
+            app:entryValues="@array/personality_preset_values"
+            app:key="personality_preset"
+            app:title="Personality preset"
+            app:useSimpleSummaryProvider="true" />
+
+        <SeekBarPreference
+            android:max="10"
+            android:min="1"
+            app:defaultValue="5"
+            app:key="emotion_sensitivity"
+            app:showSeekBarValue="true"
+            app:title="Emotion sensitivity" />
+
+        <SeekBarPreference
+            android:max="120"
+            android:min="10"
+            app:defaultValue="20"
+            app:key="idle_timeout_seconds"
+            app:showSeekBarValue="true"
+            app:title="Idle timeout seconds" />
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="VOICE">
+        <SeekBarPreference
+            android:max="200"
+            android:min="50"
+            app:defaultValue="118"
+            app:key="voice_pitch"
+            app:showSeekBarValue="true"
+            app:title="Voice pitch" />
+
+        <SeekBarPreference
+            android:max="200"
+            android:min="50"
+            app:defaultValue="92"
+            app:key="voice_speed"
+            app:showSeekBarValue="true"
+            app:title="Voice speed" />
+
+        <ListPreference
+            app:defaultValue="en_US"
+            app:entries="@array/voice_locales"
+            app:entryValues="@array/voice_locales"
+            app:key="voice_locale"
+            app:title="Voice locale"
+            app:useSimpleSummaryProvider="true" />
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="APPEARANCE">
+        <com.indianservers.ruhi.ui.ColorPreference
+            app:defaultValue="#00FFCC"
+            app:key="eye_color"
+            app:title="Eye color" />
+
+        <ListPreference
+            app:defaultValue="Pulse"
+            app:entries="@array/face_border_styles"
+            app:entryValues="@array/face_border_styles"
+            app:key="face_border_style"
+            app:title="Face border style"
+            app:useSimpleSummaryProvider="true" />
+
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="particle_effects"
+            app:title="Particle effects" />
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="HARDWARE">
+        <EditTextPreference
+            app:defaultValue="RuhiRobo"
+            app:key="ble_device_name"
+            app:title="BLE device name"
+            app:useSimpleSummaryProvider="true" />
+
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="ble_enabled"
+            app:title="BLE enabled" />
+    </PreferenceCategory>
+</PreferenceScreen>

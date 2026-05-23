@@ -6,6 +6,20 @@
     <string name="second_fragment_label">Second Fragment</string>
     <string name="next">Next</string>
     <string name="previous">Previous</string>
+    <string name="dev_mode">DEV EXPRESSIONS</string>
+    <string name="pet_message_preview">Tap Ruhi to talk</string>
+    <string name="energy_stat">Energy %1$d</string>
+    <string name="affection_stat">Affection %1$d</string>
+    <string name="curiosity_stat">Curiosity %1$d</string>
+    <string name="trust_stat">Trust %1$d</string>
+    <string name="energy_stat_preview">Energy 72</string>
+    <string name="affection_stat_preview">Affection 45</string>
+    <string name="curiosity_stat_preview">Curiosity 60</string>
+    <string name="trust_stat_preview">Trust 35</string>
+    <string name="widget_description">Ruhi mood widget</string>
+    <string name="mood_icon">Mood icon</string>
+    <string name="mic_button">Talk to Ruhi</string>
+    <string name="play_games">Play games</string>
 
     <string name="lorem_ipsum">
         Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam in scelerisque sem. Mauris
